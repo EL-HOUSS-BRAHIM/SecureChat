@@ -1,8 +1,18 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, WebSocket
+from fastapi.middleware.cors import CORSMiddleware
 from app.api import auth, friends, messages, settings, media
 from app.core.websockets import WebSocketManager
 
 app = FastAPI()
+
+# Configure CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allows all origins
+    allow_credentials=True,
+    allow_methods=["*"],  # Allows all methods
+    allow_headers=["*"],  # Allows all headers
+)
 
 # Include routers from different modules
 app.include_router(auth.router, prefix="/auth", tags=["auth"])
@@ -16,8 +26,9 @@ websocket_manager = WebSocketManager()
 
 # WebSocket endpoint for real-time communication
 @app.websocket("/ws/{user_id}")
-async def websocket_endpoint(websocket, user_id: int):
-    await websocket_manager.connect(websocket)
+async def websocket_endpoint(websocket: WebSocket, user_id: int):
+    await websocket.accept()
+    await websocket_manager.connect(websocket, user_id)
     try:
         while True:
             data = await websocket.receive_text()
@@ -25,12 +36,18 @@ async def websocket_endpoint(websocket, user_id: int):
     except Exception as e:
         print(f"Connection error: {e}")
     finally:
-        websocket_manager.disconnect(websocket)
+        await websocket_manager.disconnect(websocket, user_id)
 
 # Root endpoint
 @app.get("/")
-def read_root():
+async def read_root():
     return {"message": "Welcome to the Real-Time Chat Application API"}
 
-# Start the FastAPI application with the command:
-# uvicorn main:app --reload
+# Health check endpoint
+@app.get("/health")
+async def health_check():
+    return {"status": "healthy"}
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)

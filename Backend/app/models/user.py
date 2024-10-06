@@ -4,11 +4,11 @@ from app.db.connection import Base
 class User(Base):
     __tablename__ = 'users'
 
-    id = Column(Integer, primary_key=True, index=True)
-    username = Column(String(50), unique=True, nullable=False)
-    email = Column(String(100), unique=True, nullable=False)
-    password_hash = Column(String(100), nullable=False)
-    ms_id = Column(String(100), unique=True, nullable=False)  # Editable Message ID
+    id = Column(Integer, primary_key=True)
+    username = Column(String, unique=True, nullable=False)
+    email = Column(String, unique=True, nullable=False)
+    hashed_password = Column(String, nullable=False)
+    ms_id = Column(String, unique=True, nullable=False)
     public_key = Column(String, nullable=False)
     private_key = Column(String, nullable=False)
     is_active = Column(Boolean, default=True)
