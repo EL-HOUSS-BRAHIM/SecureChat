@@ -1,14 +1,15 @@
 from sqlalchemy import create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
-# app/db/connection.py
-from sqlalchemy.orm import declarative_base
+import os
+from dotenv import load_dotenv
 
+# Load environment variables from .env file
+load_dotenv()
 Base = declarative_base()
 
-
-# Database connection settings (replace with your actual DB settings)
-DATABASE_URL = "postgresql://user:password@localhost/db_name"
+# Database connection settings (update with your actual DB settings)
+DATABASE_URL= os.getenv('DATABASE_URL')
 
 # Create a new database engine
 engine = create_engine(DATABASE_URL)
