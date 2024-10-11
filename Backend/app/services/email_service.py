@@ -1,30 +1,44 @@
-from fastapi import BackgroundTasks
-from email.mime.text import MIMEText
 import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+import os
+from dotenv import load_dotenv
 
-# Email configuration settings (update with actual email provider and credentials)
-SMTP_SERVER = "smtp.mailtrap.io"
-SMTP_PORT = 587
-SMTP_USERNAME = "your_username"
-SMTP_PASSWORD = "your_password"
+# Load environment variables from .env file
+load_dotenv()
+# Function to send a general email
+def send_verification_email(to_email: str, body: str):
+    smtp_server = os.getenv('smtp_server')
+    smtp_port = 587  # Use 25 if you encounter issues with 587
+    username = os.getenv('smtp_username')
+    password = os.getenv('smtp_password')  # Make sure to set your password here
 
-def send_verification_email(email: str, token: str):
-    subject = "Verify Your Email"
-    body = f"Please verify your email by clicking the link: https://yourapp.com/verify?token={token}"
-    send_email(email, subject, body)
+    subject = "Email Verification"  # You can customize this subject if needed
 
-def send_2fa_email(email: str, totp_code: str):
-    subject = "Your 2FA Code"
-    body = f"Your 2FA code is: {totp_code}"
-    send_email(email, subject, body)
-
-def send_email(email: str, subject: str, body: str):
-    msg = MIMEText(body)
+    msg = MIMEMultipart()
+    msg['From'] = username
+    msg['To'] = to_email
     msg['Subject'] = subject
-    msg['From'] = SMTP_USERNAME
-    msg['To'] = email
 
-    with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
-        server.starttls()
-        server.login(SMTP_USERNAME, SMTP_PASSWORD)
-        server.sendmail(SMTP_USERNAME, email, msg.as_string())
+    msg.attach(MIMEText(body, 'plain'))
+
+    try:
+        with smtplib.SMTP(smtp_server, smtp_port) as server:
+            server.starttls()  # Upgrade the connection to a secure encrypted SSL/TLS connection
+            server.login(username, password)
+            server.sendmail(username, to_email, msg.as_string())
+        print("Verification email sent successfully.")
+    except Exception as e:
+        print(f"Failed to send email: {e}")
+
+# Function to send an OTP email
+def send_otp_email(email: str, otp: str):
+    body = f"Your login OTP code is: {otp}"
+    send_verification_email(email, body)
+
+# Function to send a 2FA email
+def send_2fa_email(email: str, totp_code: str):
+    body = f"Your 2FA code is: {totp_code}"
+    send_verification_email(email, body)
+
+# Ensure the functions are called correctly in your login logic
