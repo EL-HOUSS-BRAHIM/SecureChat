@@ -8,14 +8,20 @@ from cryptography.fernet import Fernet
 import pyotp
 from unittest.mock import Mock, patch
 
+import sys
+import os
+
+# Add the parent directory of 'app' to the Python path
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
 from app.main import app
 from app.db.connection import get_db, Base
 from app.models import user, friend
 from app.core.security import generate_totp, verify_totp
 from app.core.encryption import encrypt_message, decrypt_message, encrypt_image, decrypt_image
-from app.email_service import send_verification_email, send_2fa_email
-from app.websockets import WebSocketManager
-from app.session_manager import SessionManager
+from app.services.email_service import send_verification_email, send_2fa_email
+from app.core.websockets import WebSocketManager
+from app.services.session_manager import SessionManager
 
 # Setup SQLite in-memory test database
 SQLALCHEMY_DATABASE_URL = "sqlite://"
@@ -63,7 +69,7 @@ def session_manager():
 
 def test_user_registration(mock_db):
     response = client.post(
-        "/register", json={"username": "testuser", "email": "test@example.com", "password": "password123"})
+        "/auth/register", json={"username": "testuser", "email": "test@example.com", "password": "password123"})
     assert response.status_code == 200, f"Registration failed with status code {
         response.status_code}"
     assert response.json() == {
@@ -72,7 +78,7 @@ def test_user_registration(mock_db):
 
 
 def test_user_login(mock_db):
-    client.post("/register", json={"username": "testuser",
+    client.post("/auth/register", json={"username": "testuser",
                 "email": "test@example.com", "password": "password123"})
     response = client.post(
         "/login", json={"email": "test@example.com", "password": "password123", "totp_code": ""})
