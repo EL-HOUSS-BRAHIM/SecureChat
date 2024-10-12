@@ -39,38 +39,49 @@ def send_friend_request(
     return {"msg": "Friend request sent"}
 
 @router.post("/accept/{request_id}", response_model=dict)
-def accept_friend_request(request_id: int, user_id: int, db: Session = Depends(get_db)):
+def accept_friend_request(
+    request_id: int,
+    user_id: int = Query(..., description="ID of the user accepting the friend request"),
+    db: Session = Depends(get_db)
+):
     friend_request = db.query(friend.FriendRequest).filter(friend.FriendRequest.id == request_id).first()
     if not friend_request or friend_request.receiver_id != user_id:
         raise HTTPException(status_code=404, detail="Friend request not found")
     
     if friend_request.is_accepted:
         raise HTTPException(status_code=400, detail="Friend request already accepted")
-
+    
     friend_request.is_accepted = True
     db.commit()
     return {"msg": "Friend request accepted"}
 
 @router.get("/list", response_model=List[FriendResponse])
-def list_friends(user_id: int, db: Session = Depends(get_db)):
-    friends = db.query(user.User).join(friend.FriendRequest, 
+def list_friends(
+    user_id: int = Query(..., description="ID of the user listing their friends"),
+    db: Session = Depends(get_db)
+):
+    friends = db.query(user.User).join(friend.FriendRequest,
         ((friend.FriendRequest.requester_id == user_id) & (friend.FriendRequest.receiver_id == user.User.id)) |
         ((friend.FriendRequest.receiver_id == user_id) & (friend.FriendRequest.requester_id == user.User.id))
     ).filter(friend.FriendRequest.is_accepted == True).all()
-
+    
     return [FriendResponse(id=f.id, username=f.username, ms_id=f.ms_id) for f in friends]
 
 @router.delete("/remove/{friend_id}", response_model=dict)
-def remove_friend(friend_id: int, user_id: int, db: Session = Depends(get_db)):
+def remove_friend(
+    friend_id: int,
+    user_id: int = Query(..., description="ID of the user removing the friend"),
+    db: Session = Depends(get_db)
+):
     friendship = db.query(friend.FriendRequest).filter(
         (((friend.FriendRequest.requester_id == user_id) & (friend.FriendRequest.receiver_id == friend_id)) |
         ((friend.FriendRequest.receiver_id == user_id) & (friend.FriendRequest.requester_id == friend_id))) &
         (friend.FriendRequest.is_accepted == True)
     ).first()
-
+    
     if not friendship:
         raise HTTPException(status_code=404, detail="Friendship not found")
-
+    
     db.delete(friendship)
     db.commit()
     return {"msg": "Friend removed successfully"}
