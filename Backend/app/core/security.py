@@ -8,7 +8,48 @@ import jwt
 from datetime import datetime, timedelta
 import random  # For generating OTP
 from app.services.email_service import send_verification_email
+from fastapi.security import OAuth2PasswordBearer
+from pydantic import BaseModel
+from passlib.context import CryptContext
+from jose import JWTError, jwt
+from typing import Optional
+import pyotp
+from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.hazmat.primitives import serialization
 
+# Configuration
+SECRET_KEY = "YOUR_SECRET_KEY"  # Replace with a secure secret key
+ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = 30
+
+class Token(BaseModel):
+    access_token: str
+    token_type: str
+
+class TokenData(BaseModel):
+    username: Optional[str] = None
+
+
+def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
+    to_encode = data.copy()
+    if expires_delta:
+        expire = datetime.utcnow() + expires_delta
+    else:
+        expire = datetime.utcnow() + timedelta(minutes=15)
+    to_encode.update({"exp": expire})
+    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    return encoded_jwt
+
+def verify_token(token: str, credentials_exception):
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        username: str = payload.get("sub")
+        if username is None:
+            raise credentials_exception
+        token_data = TokenData(username=username)
+        return token_data
+    except JWTError:
+        raise credentials_exception
 # Function to generate a new RSA private key
 def generate_private_key() -> str:
     private_key = rsa.generate_private_key(
