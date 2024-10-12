@@ -16,19 +16,23 @@ class FriendResponse(BaseModel):
     ms_id: str
 
 @router.post("/request", response_model=dict)
-def send_friend_request(request: FriendRequestCreate, requester_id: int, db: Session = Depends(get_db)):
+def send_friend_request(
+    request: FriendRequestCreate,
+    requester_id: int = Query(..., description="ID of the user sending the friend request"),
+    db: Session = Depends(get_db)
+):
     receiver = db.query(user.User).filter(user.User.ms_id == request.receiver_ms_id).first()
     if not receiver:
         raise HTTPException(status_code=404, detail="User not found")
-
+    
     existing_request = db.query(friend.FriendRequest).filter(
         (friend.FriendRequest.requester_id == requester_id) & 
         (friend.FriendRequest.receiver_id == receiver.id)
     ).first()
-
+    
     if existing_request:
         raise HTTPException(status_code=400, detail="Friend request already sent")
-
+    
     friend_request = friend.FriendRequest(requester_id=requester_id, receiver_id=receiver.id)
     db.add(friend_request)
     db.commit()
