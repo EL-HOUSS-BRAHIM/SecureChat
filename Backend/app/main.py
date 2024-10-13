@@ -1,17 +1,18 @@
-from fastapi import FastAPI, WebSocket
+from fastapi import FastAPI, Depends, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from app.api import auth, friends, messages, settings, media
-from app.core.websockets import WebSocketManager
+from app.core.websockets import websocket_endpoint
+from app.core.security import get_current_user
 
 app = FastAPI()
 
 # Configure CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allows all origins
+    allow_origins=["http://localhost:3000"],  # Replace with your frontend URL
     allow_credentials=True,
-    allow_methods=["*"],  # Allows all methods
-    allow_headers=["*"],  # Allows all headers
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # Include routers from different modules
@@ -21,22 +22,33 @@ app.include_router(messages.router, prefix="/messages", tags=["messages"])
 app.include_router(settings.router, prefix="/settings", tags=["settings"])
 app.include_router(media.router, prefix="/media", tags=["media"])
 
-# WebSocket manager for real-time messaging
-websocket_manager = WebSocketManager()
+# Add WebSocket endpoint
+app.add_api_websocket_route("/ws/{user_id}", websocket_endpoint)
 
-# WebSocket endpoint for real-time communication
-@app.websocket("/ws/{user_id}")
-async def websocket_endpoint(websocket: WebSocket, user_id: int):
-    await websocket.accept()
-    await websocket_manager.connect(websocket, user_id)
-    try:
-        while True:
-            data = await websocket.receive_text()
-            await websocket_manager.broadcast(f"User {user_id} says: {data}")
-    except Exception as e:
-        print(f"Connection error: {e}")
-    finally:
-        await websocket_manager.disconnect(websocket, user_id)
+# Add this middleware to check for authentication
+@app.middleware("http")
+async def authenticate(request: Request, call_next):
+    if request.url.path in ["/auth/login", "/auth/register", "/", "/health"]:  # Skip auth for these endpoints
+        response = await call_next(request)
+        return response
+
+    token = request.cookies.get("access_token")
+    if token:
+        try:
+            token = token.split()[1]  # Remove "Bearer " prefix
+            user = get_current_user(token)
+            request.state.user = user
+        except:
+            pass
+    response = await call_next(request)
+    return response
+
+# Use this dependency in your route handlers
+async def get_current_user_from_request(request: Request):
+    user = getattr(request.state, "user", None)
+    if user is None:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    return user
 
 # Root endpoint
 @app.get("/")
@@ -47,6 +59,11 @@ async def read_root():
 @app.get("/health")
 async def health_check():
     return {"status": "healthy"}
+
+# Example protected route
+@app.get("/protected")
+async def protected_route(current_user: dict = Depends(get_current_user_from_request)):
+    return {"message": "This is a protected route", "user": current_user}
 
 if __name__ == "__main__":
     import uvicorn
