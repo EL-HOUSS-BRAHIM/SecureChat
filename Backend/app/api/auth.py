@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Response
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from pydantic import BaseModel, EmailStr
 from sqlalchemy.orm import Session
@@ -7,7 +7,7 @@ from app.models import user
 from app.core.security import (
     send_otp_email, generate_otp, generate_totp, verify_totp, 
     hash_password, generate_private_key, generate_public_key, 
-    verify_password, create_access_token
+    verify_password, create_access_token, ACCESS_TOKEN_EXPIRE_MINUTES
 )
 from app.services.email_service import send_verification_email
 from app.db.otp_service import OTPService
@@ -18,23 +18,23 @@ router = APIRouter()
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
-class UserRegistration(BaseModel):
-    username: str
-    email: EmailStr
-    password: str
-
 class UserLogin(BaseModel):
     email: EmailStr
     password: str
     totp_code: str = None
 
-class UserOTPVerification(BaseModel):
-    email: EmailStr
-    otp: str
-
 class Token(BaseModel):
     access_token: str
     token_type: str
+
+class UserRegistration(BaseModel):
+    username: str
+    email: EmailStr
+    password: str
+
+class UserOTPVerification(BaseModel):
+    email: EmailStr
+    otp: str
 
 class PasswordReset(BaseModel):
     email: EmailStr
@@ -70,23 +70,34 @@ async def register_user(user_data: UserRegistration, background_tasks: Backgroun
     return {"msg": "User registered successfully. Please check your email for verification."}
 
 @router.post("/login", response_model=Token)
-async def login_user(user_data: UserLogin, db: Session = Depends(get_db)):
+async def login(response: Response, user_data: UserLogin, db: Session = Depends(get_db)):
     user_obj = db.query(user.User).filter(user.User.email == user_data.email).first()
-
-    if not user_obj:
+    if not user_obj or not verify_password(user_data.password, user_obj.password_hash):
         raise HTTPException(status_code=400, detail="Incorrect email or password")
-
-    if not verify_password(user_data.password, user_obj.password_hash):
-        raise HTTPException(status_code=400, detail="Incorrect email or password")
-
+    
+    # Check TOTP if it's enabled for the user
     if user_obj.totp_secret:
         if not user_data.totp_code:
             raise HTTPException(status_code=400, detail="TOTP code required")
         if not verify_totp(user_obj.totp_secret, user_data.totp_code):
             raise HTTPException(status_code=400, detail="Invalid TOTP code")
 
-    access_token_expires = timedelta(minutes=30)
-    access_token = create_access_token(data={"sub": user_obj.email}, expires_delta=access_token_expires)
+    access_token = create_access_token(
+        data={"sub": user_obj.email, "user_id": user_obj.id},
+        expires_delta=timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    )
+    
+    # Set cookie
+    response.set_cookie(
+        key="access_token", 
+        value=f"Bearer {access_token}", 
+        httponly=True, 
+        max_age=1800, 
+        expires=1800,
+        samesite='lax',
+        secure=True  # set to True if using HTTPS
+    )
+    
     return {"access_token": access_token, "token_type": "bearer"}
 
 @router.post("/verify-otp", response_model=Token)
