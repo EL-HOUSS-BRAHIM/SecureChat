@@ -1,10 +1,7 @@
-import pyotp
 import bcrypt
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives import serialization
-import secrets
-import jwt
 from datetime import datetime, timedelta
 import random  # For generating OTP
 from app.services.email_service import send_verification_email
@@ -14,21 +11,38 @@ from passlib.context import CryptContext
 from jose import JWTError, jwt
 from typing import Optional
 import pyotp
-from cryptography.hazmat.primitives.asymmetric import rsa
-from cryptography.hazmat.primitives import serialization
+from fastapi import HTTPException, Depends, status
+import os
+from dotenv import load_dotenv
 
-# Configuration
-SECRET_KEY = "YOUR_SECRET_KEY"  # Replace with a secure secret key
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 30
-
-class Token(BaseModel):
-    access_token: str
-    token_type: str
+# Load environment variables from .env file
+load_dotenv()
 
 class TokenData(BaseModel):
     username: Optional[str] = None
+    user_id: Optional[int] = None
+    
+def verify_ws_token(token: str):
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        username: str = payload.get("sub")
+        if username is None:
+            raise HTTPException(status_code=401, detail="Invalid authentication credentials")
+        return username
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Invalid authentication credentials")
 
+
+# Update these with secure values
+SECRET_KEY = os.getenv('SECRET_KEY')
+ALGORITHM = os.getenv('ALGORITHM')
+ACCESS_TOKEN_EXPIRE_MINUTES = os.getenv('ACCESS_TOKEN_EXPIRE_MINUTES')
+
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+
+class TokenData(BaseModel):
+    username: Optional[str] = None
+    user_id: Optional[int] = None
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     to_encode = data.copy()
@@ -40,16 +54,24 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
 
-def verify_token(token: str, credentials_exception):
+def verify_token(token: str):
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         username: str = payload.get("sub")
-        if username is None:
+        user_id: int = payload.get("user_id")
+        if username is None or user_id is None:
             raise credentials_exception
-        token_data = TokenData(username=username)
+        token_data = TokenData(username=username, user_id=user_id)
         return token_data
     except JWTError:
         raise credentials_exception
+
+
 # Function to generate a new RSA private key
 def generate_private_key() -> str:
     private_key = rsa.generate_private_key(
@@ -84,8 +106,7 @@ def generate_public_key(private_key_pem: str) -> str:
 
 # Function to generate a TOTP secret
 def generate_totp() -> str:
-    totp = pyotp.TOTP(pyotp.random_base32())
-    return totp.provisioning_uri(name="YourApp", issuer_name="YourCompany")
+    return pyotp.random_base32()
 
 # Function to verify the provided TOTP code
 def verify_totp(secret: str, totp_code: str) -> bool:
@@ -127,3 +148,6 @@ def send_otp_email(email: str, otp: str):
     # Assuming send_verification_email is implemented in email_service.py
     message = f"Your login OTP code is: {otp}"
     send_verification_email(email, message)
+
+async def get_current_user(token: str = Depends(oauth2_scheme)):
+    return verify_token(token)
