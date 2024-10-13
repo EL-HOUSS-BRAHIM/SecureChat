@@ -102,7 +102,14 @@ def disable_2fa(disable_2fa: Disable2FA, user_id: int, db: Session = Depends(get
     if not user_obj.totp_secret:
         raise HTTPException(status_code=400, detail="2FA is not enabled")
 
-    totp = pyotp.TOTP(user_obj.totp_secret)
+    # Check if the stored secret is a URI or just the secret
+    if user_obj.totp_secret.startswith('otpauth://'):
+        secret = pyotp.parse_uri(user_obj.totp_secret).secret
+    else:
+        secret = user_obj.totp_secret
+
+    totp = pyotp.TOTP(secret)
+
     if not totp.verify(disable_2fa.totp_code):
         raise HTTPException(status_code=400, detail="Invalid TOTP code")
 
